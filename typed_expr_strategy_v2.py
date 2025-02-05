@@ -124,7 +124,69 @@ def make_comparison_for(draw, type_name: str) -> cst.BaseExpression:
         )
     return cst.Name("True")  # fallback
 
-def make_typed_expr_for(type_node: cst.Name, max_depth: int = 2) -> st.SearchStrategy[cst.BaseExpression]:
+# Strategy for function calls
+@st.composite
+def make_call_for(draw, type_name: str, max_depth: int) -> cst.Call:
+    """Generate a function call that returns the given type."""
+    # Generate a function name that indicates its return type
+    fn_name = f"get_{type_name}_{draw(st.integers(min_value=0, max_value=999))}"
+    
+    # Generate 0-2 arguments of random types
+    arg_types = draw(st.lists(
+        st.sampled_from(["int", "str", "bool", "float"]),
+        min_size=0, max_size=2
+    ))
+    args = [
+        cst.Arg(
+            value=draw(make_typed_expr_for(cst.Name(t), max_depth=0)),
+            comma=cst.Comma(
+                whitespace_before=cst.SimpleWhitespace(" "),
+                whitespace_after=cst.SimpleWhitespace(" ")
+            ) if i < len(arg_types) - 1 else None
+        )
+        for i, t in enumerate(arg_types)
+    ]
+    
+    return cst.Call(
+        func=cst.Name(fn_name),
+        args=args,
+        whitespace_after_func=cst.SimpleWhitespace(""),
+        whitespace_before_args=cst.SimpleWhitespace("")
+    )
+
+# Strategy for lambda expressions
+@st.composite
+def make_lambda_for(draw, type_name: str, max_depth: int) -> cst.Lambda:
+    """Generate a lambda expression that returns the given type."""
+    # Generate 0-2 parameters
+    param_names = [
+        f"p{i}" for i in range(draw(st.integers(min_value=0, max_value=2)))
+    ]
+    params = [
+        cst.Param(
+            name=cst.Name(name),
+            comma=cst.Comma(
+                whitespace_before=cst.SimpleWhitespace(" "),
+                whitespace_after=cst.SimpleWhitespace(" ")
+            ) if i < len(param_names) - 1 else None
+        )
+        for i, name in enumerate(param_names)
+    ]
+    
+    # Generate a body expression of the correct type
+    body = draw(make_typed_expr_for(cst.Name(type_name), max_depth=max_depth-1))
+    
+    return cst.Lambda(
+        params=cst.Parameters(params=params),
+        body=body,
+        whitespace_after_lambda=cst.SimpleWhitespace(" "),
+        colon=cst.Colon(
+            whitespace_before=cst.SimpleWhitespace(" "),
+            whitespace_after=cst.SimpleWhitespace(" ")
+        )
+    )
+
+def make_typed_expr_for(type_node: cst.Name, max_depth: int = 3) -> st.SearchStrategy[cst.BaseExpression]:
     """Generate an expression of the given type with bounded depth."""
     if not isinstance(type_node, cst.Name):
         return st.just(cst.Integer("0"))  # fallback
@@ -133,10 +195,14 @@ def make_typed_expr_for(type_node: cst.Name, max_depth: int = 2) -> st.SearchStr
     if max_depth <= 0:
         return make_literal_for(type_name)
     
-    # Mix of literals, binary operations, and comparisons
+    # Mix of literals, binary operations, comparisons, function calls, and lambdas
     strategies = [make_literal_for(type_name)]
     if max_depth > 0:
-        strategies.append(make_binary_op_for(type_name))
+        strategies.extend([
+            make_binary_op_for(type_name),
+            make_call_for(type_name, max_depth - 1),
+            make_lambda_for(type_name, max_depth - 1)
+        ])
         if type_name == "bool":
             strategies.append(make_comparison_for(type_name))
     

@@ -2,7 +2,7 @@ from hypothesis import given, settings, Verbosity
 from typed_expr_strategy_v2 import module_strategy
 
 @given(module_strategy)
-@settings(max_examples=20, verbosity=Verbosity.verbose)
+@settings(max_examples=30, verbosity=Verbosity.verbose)
 def test_typed_assignments(module):
     print("\nGenerated code:")
     print(module.code)
